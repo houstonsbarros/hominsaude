@@ -1,15 +1,4 @@
-import {
-  Mail,
-  MessageCircle,
-  MapPin,
-  Send,
-  CheckCircle,
-  Phone,
-  HelpCircle,
-  ArrowRight,
-  Zap,
-  Smartphone,
-} from "lucide-react";
+import { Send, CheckCircle, Smartphone } from "lucide-react";
 import { useState } from "react";
 import Header from "../components/Header"; // Importe o seu Header corrigido
 import Footer from "../components/Footer";

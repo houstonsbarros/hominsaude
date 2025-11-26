@@ -5,7 +5,13 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
-import { socialLoginBackend, fetchUserWithToken } from "../services/login";
+// Importe as novas funções de serviço aqui
+import {
+  socialLoginBackend,
+  fetchUserWithToken,
+  loginAuth,
+  registerAuth,
+} from "../services/login";
 
 export type User = {
   uid: string;
@@ -14,13 +20,6 @@ export type User = {
   role: "user" | "admin";
   displayName?: string;
   photoURL?: string;
-};
-
-type AuthUser = {
-  email: string;
-  password: string;
-  username: string;
-  role: "user" | "admin";
 };
 
 type AuthContextType = {
@@ -38,112 +37,64 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const ADMIN_USER: AuthUser = {
-  email: "homiin.saude@gmail.com",
-  username: "Admin",
-  password: "hominmais",
-  role: "admin" as const,
-};
-
-const DEFAULT_USER: AuthUser = {
-  email: "arthur@gmail.com",
-  username: "Arthur",
-  password: "123456",
-  role: "user" as const,
-};
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     const storedUser = localStorage.getItem("user");
     return storedUser ? JSON.parse(storedUser) : null;
   });
-  const [users, setUsers] = useState([ADMIN_USER, DEFAULT_USER]);
 
+  // --- Login via Backend ---
   const login = async (email: string, password: string) => {
-    const normalizedEmail = email.toLowerCase().trim();
+    try {
+      // 1. Faz a chamada ao endpoint /account/login
+      const response = await loginAuth({ email, password });
 
-    if (
-      normalizedEmail === ADMIN_USER.email.toLowerCase() &&
-      password === ADMIN_USER.password
-    ) {
-      const userData = {
-        uid: "admin-1",
-        username: ADMIN_USER.username,
-        email: ADMIN_USER.email,
-        role: ADMIN_USER.role as "admin",
-      };
-      setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData));
+      // Assumindo que o backend retorna { access_token: "..." } ou { token: "..." }
+      const token = response.access_token || response.token;
+
+      if (!token) {
+        throw new Error("Token não retornado pelo servidor.");
+      }
+
+      // 2. Usa o token para puxar os dados do usuário e setar o estado
+      await loginWithToken(token);
+
       return true;
+    } catch (error) {
+      console.error("Erro no login:", error);
+      // Aqui você pode tratar erros específicos (401, 500) se desejar lançar exceção
+      return false;
     }
-
-    if (
-      normalizedEmail === DEFAULT_USER.email.toLowerCase() &&
-      password === DEFAULT_USER.password
-    ) {
-      const userData = {
-        uid: "user-1",
-        username: DEFAULT_USER.username,
-        email: DEFAULT_USER.email,
-        role: DEFAULT_USER.role as "user",
-      };
-      setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData));
-      return true;
-    }
-
-    const foundUser = users.find(
-      (u) => u.email === email && u.password === password
-    );
-
-    if (foundUser) {
-      const userData = {
-        uid: `user-${Date.now()}`,
-        username: foundUser.username,
-        email: foundUser.email,
-        role: foundUser.role,
-      };
-      setUser(userData);
-      localStorage.setItem("user", JSON.stringify(userData));
-      return true;
-    }
-
-    return false;
   };
 
+  // --- Registro via Backend ---
   const register = async (
     email: string,
     password: string,
     username: string
   ) => {
-    if (users.some((u) => u.email === email)) {
-      throw new Error("Este email já está em uso");
+    try {
+      // Mapeia os dados para o formato esperado pelo backend:
+      // /account/register espera { email, name, password }
+      const payload = {
+        email,
+        name: username, // Mapeando username do front para name do back
+        password,
+      };
+
+      await registerAuth(payload);
+
+      // Opcional: Se o backend já retornar o token no registro, você pode logar direto:
+      // await login(email, password);
+
+      return true;
+    } catch (error: any) {
+      console.error("Erro no registro:", error);
+      // Repassa a mensagem de erro do backend para o componente exibir
+      throw new Error(
+        error.response?.data?.message || "Erro ao registrar usuário."
+      );
     }
-
-    if (users.some((u) => u.username === username)) {
-      throw new Error("Este nome de usuário já está em uso");
-    }
-
-    const newUser = {
-      email,
-      username,
-      password,
-      role: "user" as const,
-    };
-
-    setUsers((prev) => [...prev, newUser]);
-
-    const userData = {
-      uid: `user-${Date.now()}`,
-      username,
-      email,
-      role: "user" as const,
-    };
-
-    setUser(userData);
-    localStorage.setItem("user", JSON.stringify(userData));
-
-    return true;
   };
 
   const loginWithGoogle = async () => {
@@ -158,20 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithToken = async (token: string) => {
     try {
-      // persist token
+      // Persiste o token
       localStorage.setItem("access_token", token);
 
-      // try to fetch user info from backend
+      // Tenta buscar as informações do usuário
       const data = await fetchUserWithToken(token);
 
-      // Log raw payload for debugging (helps identify why username may be missing)
+      // Log para debug
       // eslint-disable-next-line no-console
       console.debug("fetchUserWithToken payload:", data);
 
-      // Backend may return either: { user: {...}, claims: {...} } OR a flat user object.
       const payload = (data && (data.user ?? data)) as any;
 
-      // Map defensively so we don't end up with the generic fallback unless really necessary
       const userData: User = {
         uid:
           payload?.uid ?? payload?.id ?? payload?.sub ?? `user-${Date.now()}`,
@@ -198,23 +147,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
+    localStorage.removeItem("access_token");
   };
 
-  // On mount, if there's an access token but no user object, try to restore user from /auth/me
+  // Restaura sessão ao carregar a página
   useEffect(() => {
     (async () => {
       try {
         const token = localStorage.getItem("access_token");
+        // Se tem token mas o user state está null, tenta restaurar
         if (token && !user) {
           await loginWithToken(token);
         }
       } catch (err) {
-        // If restoring fails, remove token to avoid repeated failures
         console.error("Error restoring user from token:", err);
-        localStorage.removeItem("access_token");
+        // Se falhar (token expirado), limpa tudo
+        logout();
       }
     })();
-    // We intentionally run this only once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

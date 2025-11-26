@@ -9,7 +9,6 @@ import {
   User,
   ArrowRight,
   Loader2,
-  CheckCircle2,
 } from "lucide-react";
 
 const Login = () => {
@@ -83,7 +82,12 @@ const Login = () => {
         setError("Email ou senha incorretos.");
       }
     } catch (err: any) {
-      setError(err.message || "Ocorreu um erro inesperado.");
+      console.log("Erro no submit:", err);
+      setError(
+        err.message ||
+          err.response.data.details ||
+          "Ocorreu um erro inesperado."
+      );
     } finally {
       setIsLoading(false);
     }
@@ -137,7 +141,12 @@ const Login = () => {
         <div className="w-full max-w-md space-y-6">
           {/* Cabeçalho Mobile */}
           <div className="text-center lg:text-left">
-            <div className="lg:hidden flex justify-center mb-6">
+            <div
+              className="lg:hidden flex justify-center mb-6"
+              onClick={() => {
+                navigate("/");
+              }}
+            >
               <img
                 src="/logo-color.svg"
                 alt="Logo Colorida"

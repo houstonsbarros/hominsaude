@@ -64,7 +64,7 @@ export default function Footer() {
                 </li>
                 <li>
                   <a
-                    href="equipe.html"
+                    href="/sobre"
                     className="text-gray-400 hover:text-white transition-colors flex items-center gap-2"
                   >
                     <span className="w-1 h-1 rounded-full bg-blue-500"></span>

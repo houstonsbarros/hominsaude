@@ -18,6 +18,17 @@ export function socialLoginBackend() {
   window.location.href = url;
 }
 
+interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+interface RegisterPayload {
+  email: string;
+  name: string;
+  password: string;
+}
+
 export async function fetchUserWithToken(token: string) {
   try {
     const res = await api.get("/auth/me", {
@@ -35,3 +46,23 @@ export async function fetchUserWithToken(token: string) {
     throw error;
   }
 }
+
+export const loginAuth = async (data: LoginPayload) => {
+  // POST /account/login
+  const response = await api.post("/account/login", data);
+  return response.data;
+};
+
+export const registerAuth = async (data: RegisterPayload) => {
+  // POST /account/register
+  const response = await api.post("/account/register", data);
+  return response.data;
+};
+
+export const verifyEmailToken = async (token: string) => {
+  // Nota: Verifique se seu backend espera GET ou POST.
+  // Geralmente tokens via URL são validados via POST para confirmar a alteração de estado.
+  // Ajuste para api.get se for o caso.
+  const response = await api.post(`/account/verify-email/${token}`);
+  return response.data;
+};

@@ -1,6 +1,10 @@
-import { useState, useRef, useEffect } from "react";
-import { useAuth } from "../contexts/AuthContext";
-import { sendMessage } from "../services/chat";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  type JSX,
+} from "react";
 import {
   Send,
   Menu,
@@ -13,14 +17,112 @@ import {
   X,
   Loader2,
   Trash2,
-  Lock, // Adicionei o ícone de cadeado
 } from "lucide-react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../contexts/AuthContext";
+import {
+  getConversationById,
+  getConversations,
+  sendMessage,
+} from "../services/chat";
 
-// ... (Mantenha as interfaces Message, Conversation e INITIAL_MOCK_HISTORY iguais) ...
-// --- Tipos ---
+// ----------------------------------------------------------------------
+// 1. UTILS: SIMPLE MARKDOWN RENDERER (Zero Dependencies)
+// ----------------------------------------------------------------------
+
+const parseInline = (text: string) => {
+  // Regex para capturar negrito: **texto**
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={index} className="font-bold text-slate-900">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
+
+const SimpleMarkdown = ({ text }: { text: string }) => {
+  const lines = text.split("\n");
+  const elements: JSX.Element[] = [];
+
+  let currentListItems: JSX.Element[] = [];
+  let isOrderedList = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Detectar itens de lista
+    const isUnordered = trimmed.startsWith("- ") || trimmed.startsWith("* ");
+    const isOrdered = /^\d+\.\s/.test(trimmed);
+    const isListItem = isUnordered || isOrdered;
+
+    if (isListItem) {
+      // Se começou uma lista ordenada, marca a flag
+      if (isOrdered) isOrderedList = true;
+
+      const content = isUnordered
+        ? trimmed.slice(2)
+        : trimmed.replace(/^\d+\.\s/, "");
+
+      currentListItems.push(<li key={`li-${i}`}>{parseInline(content)}</li>);
+    } else {
+      // Se não é item de lista, mas tínhamos uma lista acumulada, renderiza ela antes
+      if (currentListItems.length > 0) {
+        elements.push(
+          isOrderedList ? (
+            <ol key={`ol-${i}`} className="list-decimal pl-5 mb-2 space-y-1">
+              {currentListItems}
+            </ol>
+          ) : (
+            <ul key={`ul-${i}`} className="list-disc pl-5 mb-2 space-y-1">
+              {currentListItems}
+            </ul>
+          )
+        );
+        currentListItems = [];
+        isOrderedList = false;
+      }
+
+      // Renderiza parágrafo se não for linha vazia
+      if (trimmed) {
+        elements.push(
+          <p key={`p-${i}`} className="mb-2 last:mb-0 min-h-[1em]">
+            {parseInline(line)}
+          </p>
+        );
+      }
+    }
+  }
+
+  // Flush final da lista se o texto terminou em lista
+  if (currentListItems.length > 0) {
+    elements.push(
+      isOrderedList ? (
+        <ol key="ol-end" className="list-decimal pl-5 mb-2 space-y-1">
+          {currentListItems}
+        </ol>
+      ) : (
+        <ul key="ul-end" className="list-disc pl-5 mb-2 space-y-1">
+          {currentListItems}
+        </ul>
+      )
+    );
+  }
+
+  return (
+    <div className="text-sm md:text-base leading-relaxed text-slate-700">
+      {elements}
+    </div>
+  );
+};
+
 interface Message {
-  id: string;
+  id: string | number;
   text: string;
   sender: "user" | "bot";
   timestamp: Date;
@@ -34,69 +136,187 @@ interface Conversation {
   timestamp: Date;
 }
 
-const INITIAL_MOCK_HISTORY: Record<string | number, Message[]> = {
-  // ... (seus dados mock aqui) ...
-};
+// --- Interfaces da API ---
+interface APIConversationItem {
+  id_conversa: number;
+  titulo: string;
+  data_inicio: string;
+  data_ultima_msg: string;
+}
+
+interface APIHistoryItem {
+  id_historico: number;
+  mensagem_texto: string;
+  tipo: string;
+  origem_contexto?: string;
+  data_hora: string;
+}
 
 export default function ChatPage() {
   const navigate = useNavigate();
-  // Assumindo que o useAuth possa retornar um isLoading.
-  // Se não retornar, pode remover a lógica de loading.
-  const { user, loginWithGoogle } = useAuth();
+  const { user, loginWithGoogle, logout } = useAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // --- Estados ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+
+  // Loading states
+  const [loadingSend, setLoadingSend] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [chatsHistory, setChatsHistory] =
-    useState<Record<string | number, Message[]>>(INITIAL_MOCK_HISTORY);
-
-  const [conversations, setConversations] = useState<Conversation[]>([
-    // ... (seus dados mock de conversas) ...
-  ]);
-
+  // Dados
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<
     number | string | null
   >(null);
-
   const [messages, setMessages] = useState<Message[]>([]);
 
+  // --- Helpers ---
+  const mapApiTypeToSender = (tipo: string): "user" | "bot" => {
+    const t = tipo.toLowerCase();
+    return t === "user" || t === "human" ? "user" : "bot";
+  };
+
+  // --- Carregar Lista de Conversas ---
+  const fetchConversationsList = useCallback(async () => {
+    if (!user) return;
+    try {
+      const data = await getConversations();
+
+      const mappedConversations: Conversation[] = data.conversas.map(
+        (c: APIConversationItem) => ({
+          id: c.id_conversa,
+          title: c.titulo || "Nova Conversa",
+          lastMessage: new Date(c.data_ultima_msg).toLocaleDateString(),
+          timestamp: new Date(c.data_ultima_msg),
+        })
+      );
+
+      mappedConversations.sort(
+        (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
+      );
+
+      setConversations(mappedConversations);
+    } catch (err) {
+      console.error("Erro ao buscar conversas:", err);
+    }
+  }, [user]);
+
   // --- Efeitos ---
+
+  // 1. Carregar conversas ao montar ou logar
+  useEffect(() => {
+    fetchConversationsList();
+  }, [fetchConversationsList]);
+
+  // 2. Scroll automático
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loadingSend]);
 
+  // 3. Responsividade da Sidebar
   useEffect(() => {
-    if (activeConversationId === null) {
-      setMessages([
-        {
-          id: "welcome",
-          text: "Olá! Sou o Touch, seu assistente virtual do HOMIN+. Como posso te ajudar hoje?",
-          sender: "bot",
-          timestamp: new Date(),
-        },
-      ]);
-    } else {
-      const loadedMessages = chatsHistory[activeConversationId] || [];
-      setMessages(loadedMessages);
-    }
     if (window.innerWidth < 768) setIsSidebarOpen(false);
-  }, [activeConversationId, chatsHistory]);
+  }, [activeConversationId]);
 
-  // --- Funções ---
+  // 4. Carregar Histórico da Conversa Ativa
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (activeConversationId === null) {
+        setMessages([
+          {
+            id: "welcome",
+            text: "Olá! Sou o **Touch**, seu assistente virtual do HOMIN+. Como posso te ajudar hoje?",
+            sender: "bot",
+            timestamp: new Date(),
+          },
+        ]);
+        return;
+      }
+
+      if (
+        typeof activeConversationId === "string" &&
+        activeConversationId.startsWith("temp-")
+      ) {
+        return;
+      }
+
+      setLoadingHistory(true);
+      try {
+        // Ensure we only call the API with a numeric id.
+        // If activeConversationId is a numeric string, coerce it to number.
+        if (typeof activeConversationId !== "number") {
+          if (
+            typeof activeConversationId === "string" &&
+            /^\d+$/.test(activeConversationId)
+          ) {
+            const idNum = Number(activeConversationId);
+            const data = await getConversationById(idNum);
+
+            const mappedMessages: Message[] = data.historico.map(
+              (h: APIHistoryItem) => ({
+                id: h.id_historico,
+                text: h.mensagem_texto,
+                sender: mapApiTypeToSender(h.tipo),
+                timestamp: new Date(h.data_hora),
+                origem: h.origem_contexto,
+              })
+            );
+
+            setMessages(mappedMessages);
+            return;
+          }
+
+          // For non-numeric ids (e.g. temporary local conversations), nothing to load
+          setMessages([]);
+          return;
+        }
+
+        const data = await getConversationById(activeConversationId);
+
+        const mappedMessages: Message[] = data.historico.map(
+          (h: APIHistoryItem) => ({
+            id: h.id_historico,
+            text: h.mensagem_texto,
+            sender: mapApiTypeToSender(h.tipo),
+            timestamp: new Date(h.data_hora),
+            origem: h.origem_contexto,
+          })
+        );
+
+        setMessages(mappedMessages);
+      } catch (err) {
+        console.error("Erro ao carregar histórico:", err);
+        setError("Erro ao carregar histórico da conversa.");
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+  }, [activeConversationId]);
+
+  // --- Handlers ---
+
   const handleNewChat = () => {
     setActiveConversationId(null);
     setIsSidebarOpen(false);
+    setMessages([
+      {
+        id: "welcome",
+        text: "Olá! Sou o **Touch**, seu assistente virtual do HOMIN+. Como posso te ajudar hoje?",
+        sender: "bot",
+        timestamp: new Date(),
+      },
+    ]);
   };
 
   const handleSendMessage = async () => {
     setError(null);
     if (!inputMessage.trim()) return;
 
-    // Redundante se tivermos o bloqueio de tela, mas bom manter por segurança
     if (!user) {
       await loginWithGoogle();
       return;
@@ -105,6 +325,7 @@ export default function ChatPage() {
     const text = inputMessage.trim();
     const tempId = `temp-msg-${Date.now()}`;
 
+    // 1. Optimistic UI Update
     const userMessage: Message = {
       id: tempId,
       text,
@@ -113,53 +334,18 @@ export default function ChatPage() {
     };
 
     setInputMessage("");
-    setLoading(true);
+    setLoadingSend(true);
     setMessages((prev) => [...prev, userMessage]);
 
     let currentConversationId = activeConversationId;
-
-    if (!currentConversationId) {
-      currentConversationId = `temp-chat-${Date.now()}`;
-      const newConv: Conversation = {
-        id: currentConversationId,
-        title: text.slice(0, 30) + (text.length > 30 ? "..." : ""),
-        lastMessage: text,
-        timestamp: new Date(),
-      };
-
-      setConversations((prev) => [newConv, ...prev]);
-      setActiveConversationId(currentConversationId);
-
-      setChatsHistory((prev) => ({
-        ...prev,
-        [currentConversationId as string]: [userMessage],
-      }));
-    } else {
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === currentConversationId
-            ? { ...c, lastMessage: text, timestamp: new Date() }
-            : c
-        )
-      );
-
-      setChatsHistory((prev) => ({
-        ...prev,
-        [currentConversationId as string | number]: [
-          ...(prev[currentConversationId as string | number] || []),
-          userMessage,
-        ],
-      }));
-    }
+    const conversationIdToSend =
+      typeof currentConversationId === "number" ? currentConversationId : null;
 
     try {
-      const conversationIdToSend =
-        typeof currentConversationId === "number"
-          ? currentConversationId
-          : null;
-
+      // 2. Enviar para API
       const res = await sendMessage(text, conversationIdToSend);
 
+      // 3. Processar resposta
       const botMessage: Message = {
         id: `resp-${Date.now()}`,
         text: res.response ?? "Sem resposta do servidor.",
@@ -170,84 +356,45 @@ export default function ChatPage() {
 
       setMessages((prev) => [...prev, botMessage]);
 
-      if (res.conversa_id && currentConversationId !== res.conversa_id) {
-        const realId = res.conversa_id;
-        setConversations((prev) =>
-          prev.map((c) =>
-            c.id === currentConversationId ? { ...c, id: realId } : c
-          )
-        );
-
-        setChatsHistory((prev) => {
-          const history = prev[currentConversationId as string] || [];
-          const { [currentConversationId as string]: _, ...rest } = prev;
-          return {
-            ...rest,
-            [realId]: [...history, botMessage],
-          };
-        });
-        setActiveConversationId(realId);
-      } else {
-        setChatsHistory((prev) => ({
-          ...prev,
-          [currentConversationId as string | number]: [
-            ...(prev[currentConversationId as string | number] || []),
-            botMessage,
-          ],
-        }));
+      if (!conversationIdToSend && res.conversa_id) {
+        setActiveConversationId(res.conversa_id);
+        fetchConversationsList();
       }
     } catch (err: any) {
       console.error("Erro ao enviar:", err);
       setError(err?.response?.data?.detail ?? "Erro ao contatar servidor.");
+
       const errorMessage: Message = {
         id: `err-${Date.now()}`,
-        text: "Desculpe, tive um problema para processar sua mensagem. Tente novamente.",
+        text: "⚠️ Falha ao enviar mensagem. Tente novamente.",
         sender: "bot",
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
-
-      if (currentConversationId) {
-        setChatsHistory((prev) => ({
-          ...prev,
-          [currentConversationId as string | number]: [
-            ...(prev[currentConversationId as string | number] || []),
-            errorMessage,
-          ],
-        }));
-      }
     } finally {
-      setLoading(false);
+      setLoadingSend(false);
     }
   };
 
-  const handleDeleteConversation = (
+  const handleDeleteConversation = async (
     e: React.MouseEvent,
     id: number | string
   ) => {
     e.stopPropagation();
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeConversationId === id) {
-      setActiveConversationId(null);
+      handleNewChat();
     }
-    setChatsHistory((prev) => {
-      const newHistory = { ...prev };
-      delete newHistory[id];
-      return newHistory;
-    });
   };
 
-  // ----------------------------------------------------------------------
-  // BLOQUEIO DE ACESSO: Se não houver usuário logado, retorna tela de Login
-  // ----------------------------------------------------------------------
+  // Se não houver usuário, mostramos uma tela de login simples (mock)
   if (!user) {
     return navigate("/login");
   }
 
-  // --- Render do Chat (Apenas se logado) ---
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
-      {/* ... (Todo o seu código de renderização do chat permanece igual aqui) ... */}
+      {/* Overlay Mobile */}
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 md:hidden transition-opacity"
@@ -266,16 +413,14 @@ export default function ChatPage() {
           }
         `}
       >
-        {/* ... Conteúdo da Sidebar ... */}
         <div className="p-4 flex items-center justify-between border-b border-slate-800">
           <div
             className="flex items-center gap-2 text-white font-bold cursor-pointer"
             onClick={() => navigate("/")}
           >
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Bot size={20} />
+            <div className="flex items-center gap-2">
+              <span className="text-xl">HOMIN+</span>
             </div>
-            HOMIN+ AI
           </div>
           <button
             onClick={() => setIsSidebarOpen(false)}
@@ -301,29 +446,31 @@ export default function ChatPage() {
           <h4 className="px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
             Histórico
           </h4>
+
           {conversations.length === 0 && (
             <p className="px-4 text-sm text-slate-600 italic">
               Nenhuma conversa anterior.
             </p>
           )}
+
           {conversations.map((conv) => (
             <div
               key={conv.id}
               onClick={() => setActiveConversationId(conv.id)}
               className={`
-                    group flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors
-                    ${
-                      activeConversationId === conv.id
-                        ? "bg-slate-800 text-white"
-                        : "hover:bg-slate-800/50"
-                    }
+                  group flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer transition-colors
+                  ${
+                    activeConversationId === conv.id
+                      ? "bg-slate-800 text-white"
+                      : "hover:bg-slate-800/50"
+                  }
                 `}
             >
               <MessageSquare size={18} className="shrink-0" />
               <div className="flex-1 truncate text-sm">
                 <p className="truncate font-medium">{conv.title}</p>
                 <p className="truncate text-xs text-slate-500">
-                  {conv.lastMessage}
+                  {conv.timestamp.toLocaleDateString()}
                 </p>
               </div>
               <button
@@ -339,27 +486,27 @@ export default function ChatPage() {
         {/* User Profile Footer */}
         <div className="p-4 border-t border-slate-800">
           <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer group">
-            <img
-              src={
-                user.photoURL ||
-                `https://ui-avatars.com/api/?name=${user.displayName}`
-              }
-              alt="User"
-              className="w-9 h-9 rounded-full border border-slate-600"
-            />
+            <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold border border-slate-600 overflow-hidden">
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.username}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                user.username?.charAt(0).toUpperCase() || "U"
+              )}
+            </div>
             <div className="flex-1 overflow-hidden">
               <p className="text-sm font-medium text-white truncate">
-                {user.displayName}
+                {user.username || "Usuário"}
               </p>
               <p className="text-xs text-slate-500 truncate">Plano Gratuito</p>
             </div>
             <LogOut
               size={18}
               className="text-slate-500 group-hover:text-red-400"
-              onClick={() => {
-                /* Adicione sua lógica de logout aqui, ex: signOut() */
-                window.location.reload(); // Fallback simples
-              }}
+              onClick={() => logout()}
             />
           </div>
         </div>
@@ -385,68 +532,81 @@ export default function ChatPage() {
 
         {/* Área de Mensagens */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex gap-4 ${
-                msg.sender === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
-              {msg.sender === "bot" && (
-                <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-sm mt-1">
-                  <Bot size={16} className="text-white" />
-                </div>
-              )}
+          {/* Loader de Histórico Inicial */}
+          {loadingHistory && messages.length === 0 && (
+            <div className="flex justify-center items-center h-full">
+              <Loader2 size={32} className="animate-spin text-blue-600" />
+            </div>
+          )}
 
+          {!loadingHistory &&
+            messages.map((msg) => (
               <div
-                className={`
-                        max-w-[85%] md:max-w-[70%] rounded-2xl p-4 shadow-sm text-sm md:text-base leading-relaxed
-                        ${
-                          msg.sender === "user"
-                            ? "bg-blue-600 text-white rounded-tr-none"
-                            : "bg-white border border-slate-200 text-slate-700 rounded-tl-none"
-                        }
-                    `}
+                key={msg.id}
+                className={`flex gap-4 ${
+                  msg.sender === "user" ? "justify-end" : "justify-start"
+                }`}
               >
-                {msg.sender === "bot" && msg.origem && (
-                  <span className="block mb-2 text-xs font-bold text-blue-600 uppercase tracking-wide bg-blue-50 w-fit px-2 py-0.5 rounded">
-                    Fonte: {msg.origem}
-                  </span>
+                {msg.sender === "bot" && (
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-sm mt-1">
+                    <Bot size={16} className="text-white" />
+                  </div>
                 )}
 
-                <p className="whitespace-pre-wrap">{msg.text}</p>
-
                 <div
-                  className={`text-[10px] mt-2 flex items-center gap-1 ${
-                    msg.sender === "user"
-                      ? "text-blue-100 justify-end"
-                      : "text-slate-400"
-                  }`}
+                  className={`
+                      max-w-[85%] md:max-w-[70%] rounded-2xl p-4 shadow-sm text-sm md:text-base leading-relaxed
+                      ${
+                        msg.sender === "user"
+                          ? "bg-blue-600 text-white rounded-tr-none"
+                          : "bg-white border border-slate-200 text-slate-700 rounded-tl-none"
+                      }
+                    `}
                 >
-                  {msg.timestamp.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
-              </div>
-
-              {msg.sender === "user" && (
-                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0 shadow-sm mt-1 overflow-hidden">
-                  {user?.photoURL ? (
-                    <img
-                      src={user.photoURL}
-                      alt="Me"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User size={16} className="text-slate-500" />
+                  {msg.sender === "bot" && msg.origem && (
+                    <span className="block mb-2 text-xs font-bold text-blue-600 uppercase tracking-wide bg-blue-50 w-fit px-2 py-0.5 rounded">
+                      Fonte: {msg.origem}
+                    </span>
                   )}
-                </div>
-              )}
-            </div>
-          ))}
 
-          {loading && (
+                  {/* Renderização Condicional: Markdown para Bot, Texto Puro para User */}
+                  {msg.sender === "bot" ? (
+                    <SimpleMarkdown text={msg.text} />
+                  ) : (
+                    <p className="whitespace-pre-wrap">{msg.text}</p>
+                  )}
+
+                  <div
+                    className={`text-[10px] mt-2 flex items-center gap-1 ${
+                      msg.sender === "user"
+                        ? "text-blue-100 justify-end"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {msg.timestamp.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+
+                {msg.sender === "user" && (
+                  <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0 shadow-sm mt-1 overflow-hidden">
+                    {user?.photoURL ? (
+                      <img
+                        src={user.photoURL}
+                        alt="Me"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <User size={16} className="text-slate-500" />
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+          {loadingSend && (
             <div className="flex gap-4 justify-start">
               <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-600 to-cyan-500 flex items-center justify-center shrink-0">
                 <Bot size={16} className="text-white" />
@@ -490,10 +650,10 @@ export default function ChatPage() {
 
               <button
                 onClick={handleSendMessage}
-                disabled={!inputMessage.trim() || loading}
+                disabled={!inputMessage.trim() || loadingSend}
                 className="mb-1 p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
               >
-                {loading ? (
+                {loadingSend ? (
                   <Loader2 size={20} className="animate-spin" />
                 ) : (
                   <Send size={20} />

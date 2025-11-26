@@ -6,52 +6,52 @@ export default function AboutTeam() {
   const teamMembers = [
     {
       name: "dev.prii",
-      image: "public/equipe/dev.prii.png",
+      image: "/equipe/dev.prii.png",
       instagram: "https://www.instagram.com/dev.prii",
     },
     {
       name: "ian_zamba",
-      image: "public/equipe/ian_zamba.png",
+      image: "/equipe/ian_zamba.png",
       instagram: "https://www.instagram.com/ian_zamba",
     },
     {
       name: "o_titox",
-      image: "public/equipe/o_titox.jpg",
+      image: "/equipe/o_titox.jpg",
       instagram: "https://www.instagram.com/o_titox",
     },
     {
       name: "eh_neto",
-      image: "public/equipe/eh_neto.png",
+      image: "/equipe/eh_neto.png",
       instagram: "https://www.instagram.com/eh_neto",
     },
     {
       name: "dannykvlyn",
-      image: "public/equipe/dannykvlyn.png",
+      image: "/equipe/dannykvlyn.png",
       instagram: "https://www.instagram.com/dannykvlyn",
     },
     {
       name: "thurrr_29",
-      image: "public/equipe/thurrr_29.jpg",
+      image: "/equipe/thurrr_29.jpg",
       instagram: "https://www.instagram.com/thurrr_29",
     },
     {
       name: "maycon.fp_",
-      image: "public/equipe/maycon.fp_.png",
+      image: "/equipe/maycon.fp_.png",
       instagram: "https://www.instagram.com/maycon.fp_",
     },
     {
       name: "_renosoo",
-      image: "public/equipe/_renosoo.png",
+      image: "/equipe/_renosoo.png",
       instagram: "https://www.instagram.com/_renosoo",
     },
     {
       name: "_marii.andr",
-      image: "public/equipe/_maa.vitt2.jpg",
+      image: "/equipe/_maa.vitt2.jpg",
       instagram: "https://www.instagram.com/_marii.andr",
     },
     {
       name: "_maa.vitt",
-      image: "public/equipe/_maa.vitt.jpg",
+      image: "/equipe/_maa.vitt.jpg",
       instagram: "https://www.instagram.com/_maa.vitt",
     },
   ];
@@ -91,7 +91,7 @@ export default function AboutTeam() {
               <div className="bg-blue-100 p-2 rounded-lg">
                 <img
                   className="cover h-9 w-9 flex"
-                  src="/public/logo_uninassau.svg"
+                  src="/logo_uninassau.svg"
                   alt="UNINASSAU Logo"
                 />
               </div>

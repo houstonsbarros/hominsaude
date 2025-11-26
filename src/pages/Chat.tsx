@@ -184,8 +184,8 @@ export default function ChatPage() {
     if (!user) return;
     try {
       const data = await getConversations();
-
-      const mappedConversations: Conversation[] = data.conversas.map(
+      console.log("Conversas recebidas da API:", data);
+      const mappedConversations: Conversation[] = data.map(
         (c: APIConversationItem) => ({
           id: c.id_conversa,
           title: c.titulo || "Nova Conversa",
@@ -418,9 +418,7 @@ export default function ChatPage() {
             className="flex items-center gap-2 text-white font-bold cursor-pointer"
             onClick={() => navigate("/")}
           >
-            <div className="flex items-center gap-2">
-              <span className="text-xl">HOMIN+</span>
-            </div>
+            <img src="/logo-white.svg" alt="HOMIN+ Logo" className="h-6" />
           </div>
           <button
             onClick={() => setIsSidebarOpen(false)}

@@ -1,4 +1,4 @@
-import { Instagram, Zap, GraduationCap } from "lucide-react"; // Importe o GraduationCap
+import { Instagram, Zap } from "lucide-react";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 
@@ -6,62 +6,52 @@ export default function AboutTeam() {
   const teamMembers = [
     {
       name: "dev.prii",
-      role: "Tech Lead",
-      image: "/assets/images/dev.prii.png",
+      image: "public/equipe/dev.prii.png",
       instagram: "https://www.instagram.com/dev.prii",
     },
     {
       name: "ian_zamba",
-      role: "Desenvolvedor",
-      image: "/assets/images/ian_zamba.jpg",
+      image: "public/equipe/ian_zamba.png",
       instagram: "https://www.instagram.com/ian_zamba",
     },
     {
       name: "o_titox",
-      role: "Colaborador",
-      image: "/assets/images/o_titox.jpg",
+      image: "public/equipe/o_titox.jpg",
       instagram: "https://www.instagram.com/o_titox",
     },
     {
       name: "eh_neto",
-      role: "Colaborador",
-      image: "/assets/images/eh_neto.png",
+      image: "public/equipe/eh_neto.png",
       instagram: "https://www.instagram.com/eh_neto",
     },
     {
       name: "dannykvlyn",
-      role: "Colaboradora",
-      image: "/assets/images/dannykvlyn.png",
+      image: "public/equipe/dannykvlyn.png",
       instagram: "https://www.instagram.com/dannykvlyn",
     },
     {
       name: "thurrr_29",
-      role: "Colaborador",
-      image: "/assets/images/thurrr_29.jpg",
+      image: "public/equipe/thurrr_29.jpg",
       instagram: "https://www.instagram.com/thurrr_29",
     },
     {
       name: "maycon.fp_",
-      role: "Colaborador",
-      image: "/assets/images/maycon.fp_.png",
+      image: "public/equipe/maycon.fp_.png",
       instagram: "https://www.instagram.com/maycon.fp_",
     },
     {
       name: "_renosoo",
-      role: "Colaborador",
-      image: "/assets/images/_renosoo.png",
+      image: "public/equipe/_renosoo.png",
       instagram: "https://www.instagram.com/_renosoo",
     },
     {
       name: "_marii.andr",
-      role: "Colaboradora",
-      image: "/assets/images/_maa.vitt2.jpg",
+      image: "public/equipe/_maa.vitt2.jpg",
       instagram: "https://www.instagram.com/_marii.andr",
     },
     {
       name: "_maa.vitt",
-      role: "Colaboradora",
-      image: "/assets/images/_maa.vitt.jpg",
+      image: "public/equipe/_maa.vitt.jpg",
       instagram: "https://www.instagram.com/_maa.vitt",
     },
   ];
@@ -97,8 +87,15 @@ export default function AboutTeam() {
               Iniciativa Acadêmica
             </span>
             <div className="flex items-center gap-3 px-6 py-3 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all">
-              <div className="bg-blue-900 p-2 rounded-lg text-yellow-400">
+              {/* <div className="bg-blue-900 p-2 rounded-lg text-yellow-400">
                 <GraduationCap size={24} />
+              </div> */}
+              <div className="bg-blue-100 p-2 rounded-lg">
+                <img
+                  className="cover h-9 w-9 flex"
+                  src="/public/logo_uninassau.svg"
+                  alt="UNINASSAU Logo"
+                />
               </div>
               <div className="text-left">
                 <p className="text-xs text-gray-500 leading-none mb-1">
@@ -118,7 +115,7 @@ export default function AboutTeam() {
       <section className="py-16 bg-white border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Quem Faz Acontecer</h2>
+            <h2 className="text-3xl font-bold mb-4">Quem Não Faz Acontecer</h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
               Conheça as mentes dedicadas por trás do projeto. Uma equipe
               multidisciplinar unida pelo propósito.
@@ -149,9 +146,6 @@ export default function AboutTeam() {
                 <h3 className="text-lg font-bold text-gray-900 mb-1">
                   {member.name}
                 </h3>
-                <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full mb-6">
-                  {member.role}
-                </span>
 
                 <a
                   href={member.instagram}

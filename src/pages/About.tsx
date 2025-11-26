@@ -72,7 +72,6 @@ export default function AboutTeam() {
 
       <section className="pt-32 pb-16 px-4">
         <div className="max-w-4xl mx-auto text-center space-y-8">
-          {/* Badge de Missão */}
           <div className="inline-flex items-center gap-2 bg-blue-100 text-blue-600 px-4 py-1.5 rounded-full text-sm font-semibold">
             <Zap size={16} className="text-blue-600" />
             Nossa Missão
@@ -91,7 +90,6 @@ export default function AboutTeam() {
             validado para quebrar tabus e cuidar de quem importa.
           </p>
 
-          {/* --- BLOCO UNINASSAU ADICIONADO AQUI --- */}
           <div className="pt-6 flex flex-col items-center justify-center gap-3 animate-fade-in-up">
             <span className="text-xs font-bold text-gray-400 tracking-widest uppercase">
               Iniciativa Acadêmica
@@ -110,11 +108,9 @@ export default function AboutTeam() {
               </div>
             </div>
           </div>
-          {/* --------------------------------------- */}
         </div>
       </section>
 
-      {/* --- Seção da Equipe --- */}
       <section className="py-16 bg-white border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">

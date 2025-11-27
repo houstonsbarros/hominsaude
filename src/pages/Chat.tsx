@@ -24,6 +24,7 @@ import {
   getConversationById,
   getConversations,
   sendMessage,
+  deleteConversation,
 } from "../services/chat";
 
 // ----------------------------------------------------------------------
@@ -164,7 +165,10 @@ export default function ChatPage() {
   // Loading states
   const [loadingSend, setLoadingSend] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingDelete, setLoadingDelete] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState<number | null>(null);
 
   // Dados
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -202,7 +206,7 @@ export default function ChatPage() {
     } catch (err) {
       console.error("Erro ao buscar conversas:", err);
     }
-  }, [user]);
+  }, [user?.uid]); // Só recria se o ID do usuário mudar, não o objeto inteiro
 
   // --- Efeitos ---
 
@@ -381,10 +385,52 @@ export default function ChatPage() {
     id: number | string
   ) => {
     e.stopPropagation();
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (activeConversationId === id) {
-      handleNewChat();
+    
+    // Só permite deletar conversas com ID numérico (que existem no servidor)
+    if (typeof id !== "number") {
+      console.warn("Tentativa de deletar conversa local/temporária");
+      return;
     }
+
+    // Mostra o modal de confirmação
+    setConversationToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!conversationToDelete) return;
+
+    setLoadingDelete(conversationToDelete);
+    setShowDeleteModal(false);
+    
+    try {
+      // Chama a API para deletar no servidor
+      await deleteConversation(conversationToDelete);
+      
+      // Remove da lista local apenas após sucesso
+      setConversations((prev: Conversation[]) => prev.filter((c) => c.id !== conversationToDelete));
+      
+      // Se estava na conversa deletada, vai para nova conversa
+      if (activeConversationId === conversationToDelete) {
+        handleNewChat();
+      }
+      
+      console.log(`Conversa ${conversationToDelete} deletada com sucesso`);
+    } catch (err) {
+      console.error("Erro ao deletar conversa:", err);
+      setError("Erro ao deletar conversa. Tente novamente.");
+      
+      // Remove o erro após alguns segundos
+      setTimeout(() => setError(null), 3000);
+    } finally {
+      setLoadingDelete(null);
+      setConversationToDelete(null);
+    }
+  };
+
+  const cancelDeleteConversation = () => {
+    setShowDeleteModal(false);
+    setConversationToDelete(null);
   };
 
   // Se não houver usuário, mostramos uma tela de login simples (mock)
@@ -394,6 +440,54 @@ export default function ChatPage() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
+      {/* Modal de Confirmação de Delete */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 size={20} className="text-red-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Deletar Conversa</h3>
+                  <p className="text-sm text-slate-600">Esta ação não pode ser desfeita</p>
+                </div>
+              </div>
+              
+              <p className="text-slate-700 mb-6">
+                Tem certeza que deseja deletar esta conversa? Todo o histórico será perdido permanentemente.
+              </p>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={cancelDeleteConversation}
+                  className="px-4 py-2 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors font-medium"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={confirmDeleteConversation}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium flex items-center gap-2"
+                >
+                  {loadingDelete ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      Deletando...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} />
+                      Deletar
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Overlay Mobile */}
       {isSidebarOpen && (
         <div
@@ -473,9 +567,15 @@ export default function ChatPage() {
               </div>
               <button
                 onClick={(e) => handleDeleteConversation(e, conv.id)}
-                className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition-opacity p-1"
+                disabled={loadingDelete === conv.id}
+                className="opacity-0 group-hover:opacity-100 hover:text-red-400 hover:bg-red-50 transition-all duration-200 p-1 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Deletar conversa"
               >
-                <Trash2 size={14} />
+                {loadingDelete === conv.id ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Trash2 size={14} />
+                )}
               </button>
             </div>
           ))}

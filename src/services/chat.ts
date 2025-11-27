@@ -31,3 +31,11 @@ export async function getConversationById(conversaId: number) {
   });
   return res.data;
 }
+
+// Delete conversation
+export async function deleteConversation(conversaId: number) {  
+  const res = await api.delete(`/ai/conversas/${conversaId}`, {
+    headers: authHeaders(),
+  });
+  return res.data;
+}

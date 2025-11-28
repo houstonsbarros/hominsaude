@@ -190,12 +190,18 @@ export default function ChatPage() {
       const data = await getConversations();
       console.log("Conversas recebidas da API:", data);
       const mappedConversations: Conversation[] = data.map(
-        (c: APIConversationItem) => ({
-          id: c.id_conversa,
-          title: c.titulo || "Nova Conversa",
-          lastMessage: new Date(c.data_ultima_msg).toLocaleDateString(),
-          timestamp: new Date(c.data_ultima_msg),
-        })
+        (c: APIConversationItem) => {
+          // Usa data_ultima_msg se disponível, senão usa data_inicio como fallback
+          const dateToUse = c.data_ultima_msg || c.data_inicio;
+          const timestamp = new Date(dateToUse);
+          
+          return {
+            id: c.id_conversa,
+            title: c.titulo || "Nova Conversa",
+            lastMessage: "", // Não usado mais na interface
+            timestamp: timestamp,
+          };
+        }
       );
 
       mappedConversations.sort(
@@ -561,9 +567,6 @@ export default function ChatPage() {
               <MessageSquare size={18} className="shrink-0" />
               <div className="flex-1 truncate text-sm">
                 <p className="truncate font-medium">{conv.title}</p>
-                <p className="truncate text-xs text-slate-500">
-                  {conv.timestamp.toLocaleDateString()}
-                </p>
               </div>
               <button
                 onClick={(e) => handleDeleteConversation(e, conv.id)}

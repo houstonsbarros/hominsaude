@@ -42,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedUser = localStorage.getItem("user");
     return storedUser ? JSON.parse(storedUser) : null;
   });
+  const [hasTriedRestore, setHasTriedRestore] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false); // Previne chamadas simultâneas
 
   // --- Login via Backend ---
   const login = async (email: string, password: string) => {
@@ -108,11 +110,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithToken = async (token: string) => {
+    // Previne múltiplas chamadas simultâneas
+    if (isAuthenticating) {
+      console.log("Autenticação já em andamento, ignorando chamada duplicada");
+      return;
+    }
+
+    setIsAuthenticating(true);
     try {
       // Persiste o token
       localStorage.setItem("access_token", token);
 
+      // Verifica se já temos dados recentes do usuário (cache de 5 minutos)
+      const cachedUser = localStorage.getItem("user");
+      const lastFetch = localStorage.getItem("user_last_fetch");
+      const now = Date.now();
+      const fiveMinutes = 5 * 60 * 1000; // 5 minutos em ms
+
+      if (cachedUser && lastFetch && (now - parseInt(lastFetch)) < fiveMinutes) {
+        const userData = JSON.parse(cachedUser);
+        setUser(userData);
+        console.log("Usando dados em cache do usuário (evitando chamada à API)");
+        return;
+      }
+
       // Tenta buscar as informações do usuário
+      console.log("Buscando dados do usuário na API...");
       const data = await fetchUserWithToken(token);
 
       // Log para debug
@@ -138,9 +161,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(userData);
       localStorage.setItem("user", JSON.stringify(userData));
+      localStorage.setItem("user_last_fetch", now.toString());
     } catch (error) {
       console.error("loginWithToken error:", error);
       throw error;
+    } finally {
+      setIsAuthenticating(false);
     }
   };
 
@@ -148,15 +174,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem("user");
     localStorage.removeItem("access_token");
+    localStorage.removeItem("user_last_fetch");
+    setHasTriedRestore(false); // Reset para permitir nova tentativa de restauração
   };
 
-  // Restaura sessão ao carregar a página
+  // Restaura sessão ao carregar a página (apenas uma vez)
   useEffect(() => {
-    (async () => {
+    const restoreSession = async () => {
+      // Se já tentou restaurar ou está autenticando, não tenta novamente
+      if (hasTriedRestore || isAuthenticating) return;
+      
+      setHasTriedRestore(true);
+      
       try {
         const token = localStorage.getItem("access_token");
-        // Se tem token mas o user state está null, tenta restaurar
-        if (token && !user) {
+        const storedUser = localStorage.getItem("user");
+        
+        // Se já tem usuário no localStorage e token, não precisa chamar a API novamente
+        if (token && storedUser && !user) {
+          const userData = JSON.parse(storedUser);
+          setUser(userData);
+          console.log("Sessão restaurada do localStorage sem chamada à API");
+          return;
+        }
+        
+        // Só chama a API se tem token mas não tem dados do usuário salvos localmente
+        if (token && !storedUser && !user && !isAuthenticating) {
+          console.log("Restaurando sessão via API...");
           await loginWithToken(token);
         }
       } catch (err) {
@@ -164,9 +208,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Se falhar (token expirado), limpa tudo
         logout();
       }
-    })();
+    };
+
+    restoreSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hasTriedRestore, isAuthenticating]);
 
   return (
     <AuthContext.Provider

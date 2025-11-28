@@ -111,7 +111,7 @@ export default function AboutTeam() {
       <section className="py-16 bg-white border-t border-gray-100">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4">Quem Não Faz Acontecer</h2>
+            <h2 className="text-3xl font-bold mb-4">Quem Faz Acontecer</h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
               Conheça as mentes dedicadas por trás do projeto. Uma equipe
               multidisciplinar unida pelo propósito.
